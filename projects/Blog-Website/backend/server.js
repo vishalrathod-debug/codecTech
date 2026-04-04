@@ -1,1 +1,0 @@
-console.log('Blog backend running');
