@@ -1,44 +1,65 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
-const mongoose = require('mongoose');
 const cors = require('cors');
+const { Server } = require('socket.io');
+
+const connectDB = require('./config/db');
+const Message = require('./models/Message');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect("your_mongodb_connection");
+// DB
+connectDB();
 
-const Message = mongoose.model("Message", {
-  room: String,
-  author: String,
-  message: String,
-  time: String
-});
-
+// API route
 app.get('/messages/:room', async (req, res) => {
-  const messages = await Message.find({ room: req.params.room });
-  res.json(messages);
+  try {
+    const messages = await Message.find({ room: req.params.room })
+      .sort({ createdAt: 1 });
+    res.json(messages);
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 const server = http.createServer(app);
 
+// Socket setup
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: {
+    origin: "*"
+  }
 });
 
 io.on("connection", (socket) => {
+  console.log("User Connected:", socket.id);
+
   socket.on("join_room", (room) => {
     socket.join(room);
   });
 
   socket.on("send_message", async (data) => {
-    await Message.create(data);
-    socket.to(data.room).emit("receive_message", data);
+    try {
+      const saved = await Message.create(data);
+
+      io.to(data.room).emit("receive_message", {
+        ...data,
+        createdAt: saved.createdAt
+      });
+
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User Disconnected");
   });
 });
 
 server.listen(3001, () => {
-  console.log("Chat server running");
+  console.log("Server running on port 3001");
 });
